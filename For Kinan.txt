@@ -1,0 +1,10 @@
+Hi Professor, 
+
+For your convenience, I have listed all the files which I made changes to for you to review and avoid having to look through all the files. Hope this helps!
+
+1. nchat/char_to_number
+2. nchat/onetimepad
+3. nchat/src/uimodel.cpp
+4. nchat/lib/tgchat/ext/td/telegram/MessagesManager.cpp
+5. nchat/lib/ncutil/src/messagescache.h
+6. nchat/lib/ncutil/src/timeutil.cpp
