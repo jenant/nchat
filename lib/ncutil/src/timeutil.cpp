@@ -8,7 +8,7 @@
 #include "timeutil.h"
 
 #include <ctime>
-
+#include <cstring> 
 #include <unistd.h>
 
 #include <sys/time.h>
@@ -20,11 +20,14 @@ int64_t TimeUtil::GetCurrentTimeMSec()
   struct timeval now;
   gettimeofday(&now, NULL);
   return static_cast<int64_t>((now.tv_sec * 1000) + (now.tv_usec / 1000));
+   // return static_cast<int64_t>((now.tv_sec * 1000) + (now.tv_usec / 1000)) - 300000;
 }
 
 std::string TimeUtil::GetTimeString(int64_t p_TimeSent, bool p_IsExport)
 {
+    // p_TimeSent -= 5 * 60 * 1000
   time_t timeSent = (time_t)(p_TimeSent / 1000);
+  int milliseconds = static_cast<int>(p_TimeSent % 1000);
   struct tm tmSent;
   localtime_r(&timeSent, &tmSent);
   time_t timeNow = time(NULL);
@@ -34,34 +37,35 @@ std::string TimeUtil::GetTimeString(int64_t p_TimeSent, bool p_IsExport)
   static int64_t useWeekdayMaxAge = (6 * 24 * 3600);
   static bool isTimestampIso = AppConfig::GetBool("timestamp_iso");
 
-  if (isTimestampIso)
-  {
-    strftime(tmpstr, sizeof(tmpstr), "%Y-%m-%d %H:%M", &tmSent);
-  }
+ if (isTimestampIso)
+{
+  strftime(tmpstr, sizeof(tmpstr), "%Y-%m-%d %H:%M:%S", &tmSent);
+}
   else if (p_IsExport)
   {
     int dlen = snprintf(tmpstr, sizeof(tmpstr), "%d ", tmSent.tm_mday);
-    strftime(tmpstr + dlen, sizeof(tmpstr) - dlen, "%b %Y %H:%M", &tmSent);
+    strftime(tmpstr + dlen, sizeof(tmpstr) - dlen, "%b %Y %H:%M:%S", &tmSent);
   }
   else
   {
-    if ((tmSent.tm_year == tmNow.tm_year) && (tmSent.tm_mon == tmNow.tm_mon) && (tmSent.tm_mday == tmNow.tm_mday))
+    if ((tmSent.tm_year == tmNow.tm_year) && (tmSent.tm_mon == tmNow.tm_mon) && 
+    (tmSent.tm_mday == tmNow.tm_mday))
     {
-      strftime(tmpstr, sizeof(tmpstr), "%H:%M", &tmSent);
+      strftime(tmpstr, sizeof(tmpstr), "%H:%M:%S", &tmSent);
     }
     else if ((timeNow - timeSent) <= useWeekdayMaxAge)
     {
-      strftime(tmpstr, sizeof(tmpstr), "%a %H:%M", &tmSent);
+      strftime(tmpstr, sizeof(tmpstr), "%a %H:%M:%S", &tmSent);
     }
     else if (tmSent.tm_year == tmNow.tm_year)
     {
       int dlen = snprintf(tmpstr, sizeof(tmpstr), "%d ", tmSent.tm_mday);
-      strftime(tmpstr + dlen, sizeof(tmpstr) - dlen, "%b %H:%M", &tmSent);
+      strftime(tmpstr + dlen, sizeof(tmpstr) - dlen, "%b %H:%M:%S", &tmSent);
     }
     else
     {
       int dlen = snprintf(tmpstr, sizeof(tmpstr), "%d ", tmSent.tm_mday);
-      strftime(tmpstr + dlen, sizeof(tmpstr) - dlen, "%b %Y %H:%M", &tmSent);
+      strftime(tmpstr + dlen, sizeof(tmpstr) - dlen, "%b %Y %H:%M:%S", &tmSent);
     }
   }
 
