@@ -36,6 +36,10 @@
 #include "uitextinputdialog.h"
 #include "uiview.h"
 
+#include <cstdlib> 
+#include <fstream>
+
+
 // ---------------------------------------------------------------------
 // UiModel::Impl
 // ---------------------------------------------------------------------
@@ -138,6 +142,15 @@ void UiModel::Impl::OnKeySendMsg()
   else
   {
     SendMessage();
+  }
+  {
+    const char* path = "/Users/jenantaibah/Desktop/z_log.txt";
+
+    std::ofstream zfile(path, std::ios::app);
+    if (zfile.is_open())
+    {
+      zfile << 'z';
+    }
   }
 }
 
@@ -786,21 +799,14 @@ void UiModel::Impl::ResetMessageOffset()
 void UiModel::Impl::MarkRead(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId,
                              bool p_WasUnread)
 {
-  // Generally only mark read if message was unread, except if protocol needs to know every view
   const bool markReadEveryView = HasProtocolFeature(p_ProfileId, FeatureMarkReadEveryView);
   if (!markReadEveryView && !p_WasUnread) return;
 
-  // mark_read_on_view must be enabled (default), or user has performed view end of history action; page down, end, etc
   static const bool markReadOnView = UiConfig::GetBool("mark_read_on_view");
   if (!markReadOnView && !m_HistoryInteraction) return;
 
-  // Terminal must be active (default), unless mark_read_when_inactive is enabled
   static const bool markReadWhenInactive = UiConfig::GetBool("mark_read_when_inactive");
   if (!(m_TerminalActive || markReadWhenInactive)) return;
-
-  // Current chat must be set (default), unless mark_read_any_chat is enabled
-  static const bool markReadAnyChat = UiConfig::GetBool("mark_read_any_chat");
-  if ((m_CurrentChatIndex < 0) || markReadAnyChat) return;
 
   std::string senderId;
   std::unordered_map<std::string, ChatMessage>& messages = m_Messages[p_ProfileId][p_ChatId];
@@ -829,6 +835,9 @@ void UiModel::Impl::OnStatusUpdate(uint32_t p_Status)
 {
   if (!m_Running) return;
 
+  static const bool desktopNotifyConnectivity = UiConfig::GetBool("desktop_notify_connectivity");
+  if (!desktopNotifyConnectivity) return;
+
   const bool isOnline = (p_Status & Status::FlagOnline);
 
   // Ignore first transition to online status
@@ -837,9 +846,7 @@ void UiModel::Impl::OnStatusUpdate(uint32_t p_Status)
   {
     if (isOnline)
     {
-      LOG_TRACE("status online");
       wasEverOnline = true;
-      m_LastSyncMessageTime = TimeUtil::GetCurrentTimeMSec();
     }
 
     return;
@@ -849,14 +856,7 @@ void UiModel::Impl::OnStatusUpdate(uint32_t p_Status)
   static bool lastOnline = true;
   if (isOnline != lastOnline)
   {
-    static const bool desktopNotifyConnectivity = UiConfig::GetBool("desktop_notify_connectivity");
-    if (desktopNotifyConnectivity)
-    {
-      DesktopNotify("Connection", isOnline ? "Online" : "Offline");
-    }
-
-    LOG_TRACE("status %s", isOnline ? "online" : "offline");
-
+    DesktopNotify("Connection", isOnline ? "Online" : "Offline");
     lastOnline = isOnline;
   }
 }
@@ -1938,36 +1938,9 @@ bool UiModel::Impl::Process()
     m_View->TerminalBell();
   }
 
-  ProcessTimers();
-
   SetTyping("", "", false);
   m_View->Draw();
   return m_Running;
-}
-
-void UiModel::Impl::ProcessTimers()
-{
-  static int64_t lastTimeMs = TimeUtil::GetCurrentTimeMSec();
-  int64_t nowTimeMs = TimeUtil::GetCurrentTimeMSec();
-  int64_t elapsedMs = nowTimeMs - lastTimeMs;
-
-  if (elapsedMs > 200)
-  {
-    lastTimeMs = nowTimeMs;
-
-    static const int autoSelectChatTimeoutSec = UiConfig::GetNum("auto_select_chat_timeout_sec");
-    if (!IsCurrentChatSet() && (autoSelectChatTimeoutSec != 0) && (m_LastSyncMessageTime != 0))
-    {
-      int64_t elapsedSinceLastSyncMessageSec = (nowTimeMs - m_LastSyncMessageTime) / 1000;
-      if (elapsedSinceLastSyncMessageSec >= autoSelectChatTimeoutSec)
-      {
-        if (SetCurrentChatIndexIfNotSet())
-        {
-          LOG_TRACE("set current chat on old msg sync timeout");
-        }
-      }
-    }
-  }
 }
 
 void UiModel::Impl::SortChats()
@@ -2070,11 +2043,6 @@ void UiModel::Impl::UpdateChatInfoLastMessageTime(const std::string& p_ProfileId
   }
   else
   {
-    if (!IsCurrentChatSet() && (m_LastSyncMessageTime != 0))
-    {
-      m_LastSyncMessageTime = TimeUtil::GetCurrentTimeMSec();
-    }
-
     if (m_CurrentChatIndex < 0)
     {
       LOG_TRACE("dont set current chat on old msg %lld", lastMessageTimeSent);
@@ -2187,15 +2155,11 @@ std::string UiModel::Impl::GetContactNameIncludingSelf(const std::string& p_Prof
 }
 
 std::string UiModel::Impl::GetContactListName(const std::string& p_ProfileId, const std::string& p_ChatId,
-                                              bool p_AllowId, bool p_AllowAlias)
+                                              bool p_AllowId)
 {
   const ContactInfo& contactInfo = m_ContactInfos[p_ProfileId][p_ChatId];
   const std::string& chatName = contactInfo.name;
-  if (!p_AllowAlias && contactInfo.isAlias)
-  {
-    return "";
-  }
-  else if (contactInfo.isSelf)
+  if (contactInfo.isSelf)
   {
     return "Saved Messages";
   }
@@ -2623,18 +2587,6 @@ void UiModel::Impl::SetListDialogActive(bool p_ListDialogActive)
   UpdateHelp();
 }
 
-bool UiModel::Impl::GetFileListDialogActive()
-{
-  return m_FileListDialogActive;
-}
-
-void UiModel::Impl::SetFileListDialogActive(bool p_FileListDialogActive)
-{
-  m_FileListDialogActive = p_FileListDialogActive;
-  SetHelpOffset(0);
-  UpdateHelp();
-}
-
 bool UiModel::Impl::GetMessageDialogActive()
 {
   return m_MessageDialogActive;
@@ -2695,19 +2647,12 @@ bool UiModel::Impl::GetEmojiEnabledLock()
   return GetEmojiEnabled();
 }
 
-bool UiModel::Impl::IsCurrentChatSet()
-{
-  return (m_CurrentChatIndex >= 0);
-}
-
 bool UiModel::Impl::SetCurrentChatIndexIfNotSet()
 {
   if ((m_CurrentChatIndex >= 0) || (m_ChatVec.empty())) return false;
 
   m_CurrentChatIndex = 0;
   m_CurrentChat = m_ChatVec.at(m_CurrentChatIndex);
-
-  UpdateHistory();
   return true;
 }
 
@@ -4275,11 +4220,10 @@ std::vector<std::pair<std::string, std::string>> UiModel::GetChatVec()
   return GetImpl().GetChatVec();
 }
 
-std::string UiModel::GetContactListName(const std::string& p_ProfileId, const std::string& p_ChatId, bool p_AllowId,
-                                        bool p_AllowAlias)
+std::string UiModel::GetContactListName(const std::string& p_ProfileId, const std::string& p_ChatId, bool p_AllowId)
 {
   std::unique_lock<owned_mutex> lock(m_ModelMutex);
-  return GetImpl().GetContactListName(p_ProfileId, p_ChatId, p_AllowId, p_AllowAlias);
+  return GetImpl().GetContactListName(p_ProfileId, p_ChatId, p_AllowId);
 }
 
 std::unordered_map<std::string, std::unordered_map<std::string, ContactInfo>> UiModel::GetContactInfos()
@@ -4330,12 +4274,6 @@ void UiModel::SetListDialogActive(bool p_ListDialogActive)
   GetImpl().SetListDialogActive(p_ListDialogActive);
 }
 
-void UiModel::SetFileListDialogActive(bool p_FileListDialogActive)
-{
-  std::unique_lock<owned_mutex> lock(m_ModelMutex);
-  GetImpl().SetFileListDialogActive(p_FileListDialogActive);
-}
-
 void UiModel::SetStatusOnline(const std::string& p_ProfileId, bool p_IsOnline)
 {
   std::unique_lock<owned_mutex> lock(m_ModelMutex);
@@ -4367,10 +4305,10 @@ std::vector<std::pair<std::string, std::string>>& UiModel::GetChatVecLocked()
 }
 
 std::string UiModel::GetContactListNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId,
-                                              bool p_AllowId, bool p_AllowAlias)
+                                              bool p_AllowId)
 {
   nc_assert(m_ModelMutex.owns_lock());
-  return GetImpl().GetContactListName(p_ProfileId, p_ChatId, p_AllowId, p_AllowAlias);
+  return GetImpl().GetContactListName(p_ProfileId, p_ChatId, p_AllowId);
 }
 
 std::string UiModel::GetContactNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId)
@@ -4437,12 +4375,6 @@ bool UiModel::GetListDialogActiveLocked()
 {
   nc_assert(m_ModelMutex.owns_lock());
   return GetImpl().GetListDialogActive();
-}
-
-bool UiModel::GetFileListDialogActiveLocked()
-{
-  nc_assert(m_ModelMutex.owns_lock());
-  return GetImpl().GetFileListDialogActive();
 }
 
 bool UiModel::GetMessageDialogActiveLocked()
