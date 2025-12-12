@@ -1,0 +1,113 @@
+
+
+#include <iostream>
+#include <string>
+#include <random>
+#include <vector>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
+using namespace std;
+
+vector<uint8_t> generatePad(size_t len) {
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> dis(0, 255);
+    vector<uint8_t> pad(len);
+    for (size_t i = 0; i < len; i++) {
+        pad[i] = dis(gen);
+    }
+    return pad;
+}
+
+vector<uint8_t> encrypt(const string& msg, const vector<uint8_t>& pad) {
+    vector<uint8_t> cipher(msg.size());
+    for (size_t i = 0; i < msg.size(); i++) {
+        cipher[i] = msg[i] ^ pad[i];
+    }
+    return cipher;
+}
+
+string decrypt(const vector<uint8_t>& cipher, const vector<uint8_t>& pad) {
+    string msg(cipher.size(), 0);
+    for (size_t i = 0; i < cipher.size(); i++) {
+        msg[i] = cipher[i] ^ pad[i];
+    }
+    return msg;
+}
+
+void runServer(int port) {
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
+    
+    bind(server_fd, (sockaddr*)&addr, sizeof(addr));
+    listen(server_fd, 1);
+    cout << "Server listening on port " << port << endl;
+    
+    int client_fd = accept(server_fd, nullptr, nullptr);
+    cout << "Client connected" << endl;
+    
+    string msg = "Hello -server";
+    vector<uint8_t> pad = generatePad(msg.size());
+    vector<uint8_t> cipher = encrypt(msg, pad);
+    
+    uint32_t len = pad.size();
+    send(client_fd, &len, sizeof(len), 0);
+    send(client_fd, pad.data(), pad.size(), 0);
+    send(client_fd, cipher.data(), cipher.size(), 0);
+    
+    cout << "Sent encrypted message" << endl;
+    
+    close(client_fd);
+    close(server_fd);
+}
+
+void runClient(const string& host, int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
+    
+    connect(sock, (sockaddr*)&addr, sizeof(addr));
+    cout << "Connected to server" << endl;
+    
+    uint32_t len;
+    recv(sock, &len, sizeof(len), 0);
+    
+    vector<uint8_t> pad(len);
+    recv(sock, pad.data(), len, 0);
+    
+    vector<uint8_t> cipher(len);
+    recv(sock, cipher.data(), len, 0);
+    
+    string msg = decrypt(cipher, pad);
+    cout << "Decrypted message: " << msg << endl;
+    
+    close(sock);
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        cout << "Usage: " << argv[0] << " server|client [host] [port]" << endl;
+        return 1;
+    }
+    
+    string mode = argv[1];
+    int port = (argc > 3) ? stoi(argv[3]) : 8080;
+    
+    if (mode == "server") {
+        runServer(port);
+    } else if (mode == "client") {
+        string host = (argc > 2) ? argv[2] : "127.0.0.1";
+        runClient(host, port);
+    }
+    
+    return 0;
+}
